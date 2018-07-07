@@ -1,0 +1,87 @@
+import com.lukamaletin.cdss.model.*;
+import com.lukamaletin.cdss.model.dto.*;
+import java.util.Collections;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Set;
+import java.util.HashSet;
+
+query "Get potentially chronically ill patients"
+    /* Get all diseases the patient suffered from */
+    $patient: Patient($therapies: therapies)
+    $diseases: Set() from accumulate (
+        Therapy($disease: disease) from $therapies, collectSet($disease)
+    )
+
+    /* Check how many therapies are present for each disease */
+    $disease: Disease() from $diseases
+    Number(intValue > 5) from accumulate(
+        Therapy(
+            disease != null,
+            disease.name == $disease.name,
+            disease.name != "Cold",
+            disease.name != "Fever",
+            sufferingDaysLessThan(780)
+        ) from $therapies,
+        count(1)
+    )
+end
+
+query "Get potentially addicted patients"
+    $patient: Patient($therapies: therapies)
+
+    /* Get therapies with painkillers prescribed */
+    $painkillerTherapies: List(size > 5) from accumulate(
+        $therapy: Therapy(
+            $medications: medications,
+            sufferingDaysLessThan(180)
+        ) from $therapies,
+        init(List therapies = new ArrayList();),
+        action(if ($medications.stream().anyMatch(m -> ((Medication) m).getType().name() == "PAINKILLER")) {
+            therapies.add($therapy);
+        }),
+        result(therapies)
+    )
+
+    /* Check if prescribed by different medics */
+    Set(size > 2) from accumulate(
+        Therapy($medic: prescribedBy) from $painkillerTherapies,
+        collectSet($medic)
+    )
+end
+
+query "Get weakened immunity patients"
+    $patient: Patient($therapies: therapies)
+
+    /* Get therapies with antibiotics prescribed */
+    $antibioticTherapies: List(size > 10) from accumulate(
+        $therapy: Therapy(
+            $medications: medications,
+            sufferingDaysLessThan(365)
+        ) from $therapies,
+        init(List therapies = new ArrayList();),
+        action(if ($medications.stream().anyMatch(m -> ((Medication) m).getType().name() == "ANTIBIOTIC")) {
+            therapies.add($therapy);
+        }),
+        result(therapies)
+    )
+
+    /* Check if different diseases */
+    Set(size > 1) from accumulate(
+        Therapy($disease: disease) from $antibioticTherapies,
+        collectSet($disease)
+    )
+
+    /* Check if no therapies without antibiotics */
+    Number(intValue == 0) from accumulate(
+        $therapy: Therapy(
+            $medications: medications,
+            sufferingDaysLessThan(365)
+        ) from $therapies,
+        init(int count = 0;),
+        action(if (!$medications.stream().allMatch(m -> ((Medication) m).getType().name() == "ANTIBIOTIC" || m == null)) {
+            count++;
+        }),
+        result(count)
+    )
+end

@@ -1,0 +1,4 @@
+rules:
+  groupId: com.lukamaletin.cdss
+  artifactId: rule-based-cdss-kjar
+  version: 0.0.1-SNAPSHOT

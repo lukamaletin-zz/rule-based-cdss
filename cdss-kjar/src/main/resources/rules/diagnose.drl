@@ -1,0 +1,103 @@
+import com.lukamaletin.cdss.model.*;
+import com.lukamaletin.cdss.model.dto.*;
+import java.util.List;
+
+rule "Patient symptom names"
+    when
+        /* Get the names of the patient's symptoms */
+        DiagnosisRequest($symptoms: symptoms)
+        $patientSymptoms: List() from accumulate (
+            $s: Symptom($name: name) from $symptoms, collectList($name)
+        )
+    then
+end
+
+rule "Diseases of group 1" extends "Patient symptom names"
+    when
+        /* Select one disease from this group */
+        $disease: Disease($diseaseSymptoms: symptoms, groupNumber == 1)
+
+        /* Count how many symptoms are matched with selected disease */
+        $matchedSymptoms: Number(intValue > 3) from accumulate (
+            SymptomDisease(
+                $patientSymptoms contains symptom.name
+            ) from $diseaseSymptoms,
+            count(1)
+        )
+    then
+        System.out.println("Matched disease " + $disease.getName() + " - matching symptoms: " + $matchedSymptoms +
+                           " out of " + $disease.getSymptoms().size());
+        insert(new MatchedDisease($matchedSymptoms.floatValue() / $disease.getSymptoms().size(), $disease));
+end
+
+rule "Diseases of group 2" extends "Patient symptom names"
+    when
+        /* Select one disease from this group */
+        $disease: Disease($diseaseSymptoms: symptoms, groupNumber == 2)
+
+        /* Count how many symptoms are matched with selected disease */
+        $matchedSymptoms: Number(intValue >= $diseaseSymptoms.size) from accumulate (
+            SymptomDisease(
+                $patientSymptoms contains symptom.name
+            ) from $diseaseSymptoms,
+            count(1)
+        )
+    then
+        System.out.println("Matched disease " + $disease.getName() + " - matching symptoms: " + $matchedSymptoms +
+                           " out of " + $disease.getSymptoms().size());
+        insert(new MatchedDisease($matchedSymptoms.floatValue() / $disease.getSymptoms().size(), $disease));
+end
+
+rule "Diseases of group 3" extends "Patient symptom names"
+    when
+        /* Select one disease from this group */
+        $disease: Disease($diseaseSymptoms: symptoms, groupNumber == 3)
+
+        /* Count how many symptoms are matched with selected disease */
+        $matchedSymptomsSpecific: Number(intValue > 0) from accumulate (
+            SymptomDisease(
+                specific == true,
+                $patientSymptoms contains symptom.name
+            ) from $diseaseSymptoms,
+            count(1)
+        )
+
+        $matchedSymptomsGeneral: Number(intValue > 1) from accumulate (
+            SymptomDisease(
+                specific == false,
+                $patientSymptoms contains symptom.name
+            ) from $diseaseSymptoms,
+            count(1)
+        )
+    then
+        System.out.println("Matched disease " + $disease.getName() + " - matching symptoms: specific " +
+                           $matchedSymptomsSpecific + ", general " + $matchedSymptomsGeneral +
+                           ", out of total " + $disease.getSymptoms().size());
+        insert(new MatchedDisease(($matchedSymptomsSpecific.floatValue() + $matchedSymptomsGeneral.floatValue()) /
+                                   $disease.getSymptoms().size(), $disease));
+end
+
+rule "Find most probable disease of all matched diseases"
+    salience -100
+    when
+        $mostProbable: MatchedDisease() from accumulate(
+            $disease: MatchedDisease(
+                $percentageMatched: percentageMatched,
+                $totalMatched: disease.symptoms.size
+            ),
+            init(float max = 0; MatchedDisease maxDisease = null;),
+            action(
+                if (maxDisease == null ||
+                    $percentageMatched > max ||
+                    (max == $percentageMatched && $totalMatched > maxDisease.getDisease().getSymptoms().size())) {
+                    max = $percentageMatched;
+                    maxDisease = $disease;
+                }
+            ),
+            result(maxDisease)
+        )
+    then
+        System.out.println("Most probable disease: " + $mostProbable.getDisease().getName() +
+                           " - percentage matched: " + $mostProbable.getPercentageMatched());
+        insert(new DiagnosisResponse($mostProbable.getPercentageMatched(), new DiseaseResponse($mostProbable.getDisease())));
+end

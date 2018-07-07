@@ -1,0 +1,81 @@
+import com.lukamaletin.cdss.model.monitoring.*;
+import java.util.List;
+
+global com.lukamaletin.cdss.service.MonitoringService service;
+
+rule "Problem with oxygen"
+agenda-group "monitoring"
+    when
+        $patient: MonitoredPatient()
+
+        /* Check if current oxygen level below threshold */
+        OxygenChangeEvent(
+            patient.personalId == $patient.personalId,
+            oxygenLevel < 70
+        ) over window:length(1)
+
+        /* Check if there was no increase */
+        Number(intValue == 0) from accumulate(
+            OxygenChangeEvent(
+                patient.personalId == $patient.personalId,
+                $oxygenLevel: oxygenLevel
+            ) over window:time(15m),
+            init(int count = 0; int previous = -1;),
+            action(
+                if (previous == -1) {
+                    previous = $oxygenLevel;
+                    return;
+                }
+
+                if ($oxygenLevel > previous) {
+                    count++;
+                }
+
+                previous = $oxygenLevel;
+            ),
+            result(count)
+        )
+    then
+        System.out.println(drools.getRule().getName());
+        service.sendNotification($patient.getPersonalId(), drools.getRule().getName());
+end
+
+rule "Fast heart rate"
+agenda-group "monitoring"
+    when
+        $patient: MonitoredPatient()
+
+        Number(intValue > 25) from accumulate(
+            HeartbeatEvent(
+                patient.personalId == $patient.personalId
+            ) over window:time(10s),
+            count(1)
+        )
+    then
+        System.out.println(drools.getRule().getName());
+        service.sendNotification($patient.getPersonalId(), drools.getRule().getName());
+end
+
+rule "Dialysis required"
+agenda-group "monitoring"
+    when
+        $patient: MonitoredPatient(chronicKidneyDisease == true)
+
+        Number(intValue > 10) from accumulate(
+            HeartbeatEvent(
+                patient.personalId == $patient.personalId
+            ) over window:time(10s),
+            count(1)
+        )
+
+        Number(intValue < 100) from accumulate(
+            UrinationEvent(
+                patient.personalId == $patient.personalId,
+                $amount: amount
+            ) over window:time(12h),
+            sum($amount)
+        )
+    then
+        System.out.println(drools.getRule().getName());
+        service.sendNotification($patient.getPersonalId(), drools.getRule().getName());
+end

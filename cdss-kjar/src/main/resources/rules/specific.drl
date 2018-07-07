@@ -1,0 +1,136 @@
+import com.lukamaletin.cdss.model.*;
+import com.lukamaletin.cdss.model.dto.*;
+
+rule "Increased body temperature (>38°C)"
+    salience 100
+    when
+        $req: DiagnosisRequest(bodyTemperature > 38)
+    then
+        System.out.println(drools.getRule().getName());
+        modify($req){getSymptoms().add(new Symptom(drools.getRule().getName()));}
+end
+
+rule "Increased body temperature (>=40°C, <=41°C)"
+    salience 100
+    when
+        $req: DiagnosisRequest(bodyTemperature >= 40, bodyTemperature <= 41)
+    then
+        System.out.println(drools.getRule().getName());
+        modify($req){getSymptoms().add(new Symptom(drools.getRule().getName()));}
+end
+
+rule "Cold or fever in last 60 days"
+    salience 100
+    when
+        $req: DiagnosisRequest()
+        Therapy(
+            disease != null &&
+            (disease.name == "Cold" || disease.name == "Fever")
+        ) over window:time(60d)
+    then
+        System.out.println(drools.getRule().getName());
+        modify($req){getSymptoms().add(new Symptom(drools.getRule().getName()));}
+end
+
+rule "High blood pressure measured more than 10 times in last 6 months"
+    salience 100
+    when
+        $req: DiagnosisRequest()
+        Number(intValue > 10) from accumulate(
+            Therapy(highBloodPressure == true)
+            over window:time(180d),
+            count(1)
+        )
+    then
+        System.out.println(drools.getRule().getName());
+        modify($req){getSymptoms().add(new Symptom(drools.getRule().getName()));}
+end
+
+rule "Suffering from hypertension more than 6 months"
+    salience 100
+    when
+        $req: DiagnosisRequest()
+        Therapy(
+            disease != null,
+            disease.name == "Hypertension",
+            chronic,
+            sufferingDaysMoreThan(180)
+        )
+    then
+        System.out.println(drools.getRule().getName());
+        modify($req){getSymptoms().add(new Symptom(drools.getRule().getName()));}
+end
+
+rule "Suffering from diabetes"
+    salience 100
+    when
+        $req: DiagnosisRequest()
+        Therapy(
+            disease != null,
+            disease.name == "Diabetes",
+            isChronic()
+        )
+    then
+        System.out.println(drools.getRule().getName());
+        modify($req){getSymptoms().add(new Symptom(drools.getRule().getName()));}
+end
+
+rule "Recovering from surgery"
+    salience 100
+    when
+        $req: DiagnosisRequest()
+        Therapy(
+            surgeryPerformed == true
+        )
+    then
+        System.out.println(drools.getRule().getName());
+        modify($req){getSymptoms().add(new Symptom(drools.getRule().getName()));}
+end
+
+rule "Diagnosed with disease with increased body temperature symptom in last 14 days"
+    salience 100
+    when
+        $req: DiagnosisRequest()
+
+        /* Select a therapy */
+        Therapy(
+            disease != null,
+            disease.symptoms != null,
+            $symptoms: disease.symptoms
+        ) over window:time(14d)
+
+        /* Check if symptoms match */
+        Number(intValue > 0) from accumulate (
+            SymptomDisease(
+                symptom.name == "Increased body temperature (>38°C)" ||
+                symptom.name == "Increased body temperature (>=40°C, <=41°C)"
+            ) from $symptoms,
+            count(1)
+        )
+    then
+        System.out.println(drools.getRule().getName());
+        modify($req){getSymptoms().add(new Symptom(drools.getRule().getName()));}
+end
+
+rule "Antibiotics prescribed in last 21 days"
+    salience 100
+    when
+        $req: DiagnosisRequest()
+
+        /* Select a therapy */
+        Therapy(
+            medications != null,
+            $medications: medications
+        ) over window:time(21d)
+
+        /* Check if medications match */
+        Number(intValue > 0) from accumulate (
+            Medication(
+                type.name == "ANTIBIOTIC"
+            ) from $medications,
+            count(1)
+        )
+    then
+        System.out.println(drools.getRule().getName());
+        modify($req){getSymptoms().add(new Symptom(drools.getRule().getName()));}
+end

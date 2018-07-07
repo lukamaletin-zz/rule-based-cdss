@@ -1,0 +1,39 @@
+import com.lukamaletin.cdss.model.*;
+import com.lukamaletin.cdss.model.dto.*;
+import java.util.Collections;
+import java.util.List;
+
+query "Get diseases related to symptoms"
+    $symptoms: List() from collect (Symptom())
+    $symptomNames: List() from accumulate (
+        Symptom($name: name) from $symptoms, collectList($name)
+    )
+
+    $disease: Disease($diseaseSymptoms: symptoms)
+
+    $matched: Number(intValue > 0) from accumulate(
+        SymptomDisease(symptom.name memberOf $symptomNames) from $diseaseSymptoms,
+        count(1)
+    )
+end
+
+query "Get disease symptoms" (String diseaseName)
+    Disease(name == diseaseName, $symptoms: symptoms)
+end
+
+query "Get prescribed medications with allergies"
+    /* Select allergy names */
+    $allergies: List() from collect (Ingredient())
+    $allergyNames: List() from accumulate (
+        Ingredient($name: name) from $allergies, collectList($name)
+    )
+
+    /* Select medication ingredient names */
+    $medication: Medication($ingredients: ingredients)
+    $ingredientNames: List() from accumulate (
+        Ingredient($name: name) from $ingredients, collectList($name)
+    )
+
+    /* Check if allergies match */
+    eval (Collections.disjoint($allergyNames, $ingredientNames) == false)
+end
